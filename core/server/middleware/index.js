@@ -12,18 +12,17 @@ var api            = require('../api'),
     hbs            = require('express-hbs'),
     logger         = require('morgan'),
     middleware     = require('./middleware'),
-    packageInfo    = require('../../../package.json'),
     path           = require('path'),
     routes         = require('../routes'),
     slashes        = require('connect-slashes'),
     storage        = require('../storage'),
-    url            = require('url'),
     _              = require('lodash'),
     passport       = require('passport'),
     oauth          = require('./oauth'),
     oauth2orize    = require('oauth2orize'),
     authStrategies = require('./auth-strategies'),
     utils          = require('../utils'),
+    sitemapHandler = require('../data/sitemap/handler'),
 
     blogApp,
     setupMiddleware;
@@ -36,7 +35,7 @@ var api            = require('../api'),
 function ghostLocals(req, res, next) {
     // Make sure we have a locals value.
     res.locals = res.locals || {};
-    res.locals.version = packageInfo.version;
+    res.locals.version = config.ghostVersion;
     // relative path from the URL
     res.locals.relativeUrl = req.path;
 
@@ -163,47 +162,12 @@ function uncapitalise(req, res, next) {
     }
 }
 
-function isSSLrequired(isAdmin) {
-    var forceSSL = url.parse(config.url).protocol === 'https:' ? true : false,
-        forceAdminSSL = (isAdmin && config.forceAdminSSL);
-    if (forceSSL || forceAdminSSL) {
-        return true;
-    }
-    return false;
-}
-
-// Check to see if we should use SSL
-// and redirect if needed
-function checkSSL(req, res, next) {
-    if (isSSLrequired(res.isAdmin)) {
-        if (!req.secure) {
-            var forceAdminSSL = config.forceAdminSSL,
-                redirectUrl;
-
-            // Check if forceAdminSSL: { redirect: false } is set, which means
-            // we should just deny non-SSL access rather than redirect
-            if (forceAdminSSL && forceAdminSSL.redirect !== undefined && !forceAdminSSL.redirect) {
-                return res.sendStatus(403);
-            }
-
-            redirectUrl = url.parse(config.urlSSL || config.url);
-            return res.redirect(301, url.format({
-                protocol: 'https:',
-                hostname: redirectUrl.hostname,
-                port: redirectUrl.port,
-                pathname: req.path,
-                query: req.query
-            }));
-        }
-    }
-    next();
-}
-
 // ### ServeSharedFile Middleware
 // Handles requests to robots.txt and favicon.ico (and caches them)
 function serveSharedFile(file, type, maxAge) {
     var content,
-        filePath = path.join(config.paths.corePath, 'shared', file);
+        filePath = path.join(config.paths.corePath, 'shared', file),
+        re = /(\{\{blog-url\}\})/g;
 
     return function serveSharedFile(req, res, next) {
         if (req.url === '/' + file) {
@@ -215,7 +179,9 @@ function serveSharedFile(file, type, maxAge) {
                     if (err) {
                         return next(err);
                     }
-
+                    if (type === 'text/xsl' || type === 'text/plain') {
+                        buf = buf.toString().replace(re, config.url.replace(/\/$/, ''));
+                    }
                     content = {
                         headers: {
                             'Content-Type': type,
@@ -264,6 +230,7 @@ setupMiddleware = function (blogAppInstance, adminApp) {
 
     // Favicon
     blogApp.use(serveSharedFile('favicon.ico', 'image/x-icon', utils.ONE_DAY_S));
+    blogApp.use(serveSharedFile('sitemap.xsl', 'text/xsl', utils.ONE_DAY_S));
 
     // Static assets
     blogApp.use('/shared', express['static'](path.join(corePath, '/shared'), {maxAge: utils.ONE_HOUR_MS}));
@@ -283,7 +250,7 @@ setupMiddleware = function (blogAppInstance, adminApp) {
     // NOTE: Importantly this is _after_ the check above for admin-theme static resources,
     //       which do not need HTTPS. In fact, if HTTPS is forced on them, then 404 page might
     //       not display properly when HTTPS is not available!
-    blogApp.use(checkSSL);
+    blogApp.use(middleware.checkSSL);
     adminApp.set('views', config.paths.adminViews);
 
     // Theme only config
@@ -292,13 +259,14 @@ setupMiddleware = function (blogAppInstance, adminApp) {
     // Serve robots.txt if not found in theme
     blogApp.use(serveSharedFile('robots.txt', 'text/plain', utils.ONE_HOUR_S));
 
-    // Add in all trailing slashes, properly include the subdir path
-    // in the redirect.
+    // site map
+    sitemapHandler(blogApp);
+
+    // Add in all trailing slashes
     blogApp.use(slashes(true, {
         headers: {
             'Cache-Control': 'public, max-age=' + utils.ONE_YEAR_S
-        },
-        base: config.paths.subdir
+        }
     }));
     blogApp.use(uncapitalise);
 

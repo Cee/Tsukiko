@@ -14,11 +14,13 @@ var hbs             = require('express-hbs'),
     config          = require('../config'),
     filters         = require('../filters'),
 
+    api                 = require('../api'),
     urlHelper           = require('./url'),
     meta_description    = require('./meta_description'),
     meta_title          = require('./meta_title'),
     excerpt             = require('./excerpt'),
     tagsHelper          = require('./tags'),
+    imageHelper         = require('./image'),
     ghost_head;
 
 ghost_head = function (options) {
@@ -30,32 +32,44 @@ ghost_head = function (options) {
         majorMinor = /^(\d+\.)?(\d+)/,
         trimmedVersion = this.version,
         trimmedUrlpattern = /.+(?=\/page\/\d*\/)/,
+        tagOrAuthorPattern = /\/(tag)|(author)\//,
         trimmedUrl, next, prev, tags,
         ops = [],
         structuredData,
         coverImage, authorImage, keywords,
-        schema;
+        schema,
+        title = hbs.handlebars.Utils.escapeExpression(blog.title);
 
     trimmedVersion = trimmedVersion ? trimmedVersion.match(majorMinor)[0] : '?';
     // Push Async calls to an array of promises
     ops.push(urlHelper.call(self, {hash: {absolute: true}}));
     ops.push(meta_description.call(self));
     ops.push(meta_title.call(self));
+    if (self.post) {
+        ops.push(imageHelper.call(self.post, {hash: {absolute:true}}));
+
+        if (self.post.author) {
+            ops.push(imageHelper.call(self.post.author, {hash: {absolute:true}}));
+        }
+    }
 
     // Resolves promises then push pushes meta data into ghost_head
     return Promise.settle(ops).then(function (results) {
         var url = results[0].value(),
             metaDescription = results[1].value(),
             metaTitle = results[2].value(),
+            coverImage = results.length > 3 ? results[3].value() : null,
+            authorImage = results.length > 4 ? results[4].value() : null,
             publishedDate, modifiedDate,
             tags = tagsHelper.call(self.post, {hash: {autolink: 'false'}}).string.split(','),
-            card = 'content';
+            card = 'summary',
+            type, authorUrl;
 
         if (!metaDescription) {
             metaDescription = excerpt.call(self.post, {hash: {words: '40'}}).string;
         }
         if (tags[0] !== '') {
-            keywords = tagsHelper.call(self.post, {hash: {autolink: 'false', seperator: ', '}}).string;
+            keywords = hbs.handlebars.Utils.escapeExpression(tagsHelper.call(self.post, {hash: {autolink: 'false', seperator: ', '}}).string);
         }
         head.push('<link rel="canonical" href="' + url + '" />');
 
@@ -63,12 +77,16 @@ ghost_head = function (options) {
             trimmedUrl = self.relativeUrl.match(trimmedUrlpattern);
             if (self.pagination.prev) {
                 prev = (self.pagination.prev > 1 ? prev = '/page/' + self.pagination.prev + '/' : prev = '/');
-                prev = (trimmedUrl) ? '/' + trimmedUrl + prev : prev;
+                prev = (trimmedUrl) ? trimmedUrl + prev : prev;
                 head.push('<link rel="prev" href="' + config.urlFor({relativeUrl: prev, secure: self.secure}, true) + '" />');
             }
             if (self.pagination.next) {
                 next = '/page/' + self.pagination.next + '/';
-                next = (trimmedUrl) ? '/' + trimmedUrl + next : next;
+                if (trimmedUrl) {
+                    next = trimmedUrl + next;
+                } else if (tagOrAuthorPattern.test(self.relativeUrl)) {
+                    next = self.relativeUrl.slice(0, -1) + next;
+                }
                 head.push('<link rel="next" href="' + config.urlFor({relativeUrl: next, secure: self.secure}, true) + '" />');
             }
         }
@@ -78,28 +96,24 @@ ghost_head = function (options) {
             publishedDate = moment(self.post.published_at).toISOString();
             modifiedDate = moment(self.post.updated_at).toISOString();
 
-            if (self.post.image) {
-                coverImage = self.post.image;
-                // Test to see if image was linked by url or uploaded
-                coverImage = coverImage.substring(0, 4) === 'http' ? coverImage : _.escape(blog.url) + coverImage;
+            if (coverImage) {
                 card = 'summary_large_image';
             }
 
-            if (self.post.author.image) {
-                authorImage = self.post.author.image;
-                // Test to see if image was linked by url or uploaded
-                authorImage = authorImage.substring(0, 4) === 'http' ? authorImage : _.escape(blog.url) + authorImage;
-            }
+            // escaped data
+            metaTitle = hbs.handlebars.Utils.escapeExpression(metaTitle);
+            metaDescription = hbs.handlebars.Utils.escapeExpression(metaDescription + '...');
+            authorUrl = hbs.handlebars.Utils.escapeExpression(blog.url + '/author/' + self.post.author.slug);
 
             schema = {
                 '@context': 'http://schema.org',
                 '@type': 'Article',
-                publisher: _.escape(blog.title),
+                publisher: title,
                 author: {
                     '@type': 'Person',
                     name: self.post.author.name,
                     image: authorImage,
-                    url: _.escape(blog.url) + '/author/' + self.post.author.slug,
+                    url: authorUrl,
                     sameAs: self.post.author.website
                 },
                 headline: metaTitle,
@@ -112,10 +126,10 @@ ghost_head = function (options) {
             };
 
             structuredData = {
-                'og:site_name': _.escape(blog.title),
+                'og:site_name': title,
                 'og:type': 'article',
                 'og:title': metaTitle,
-                'og:description': metaDescription + '...',
+                'og:description': metaDescription,
                 'og:url': url,
                 'og:image': coverImage,
                 'article:published_time': publishedDate,
@@ -123,7 +137,7 @@ ghost_head = function (options) {
                 'article:tag': tags,
                 'twitter:card': card,
                 'twitter:title': metaTitle,
-                'twitter:description': metaDescription + '...',
+                'twitter:description': metaDescription,
                 'twitter:url': url,
                 'twitter:image:src': coverImage
             };
@@ -132,16 +146,14 @@ ghost_head = function (options) {
                 if (property === 'article:tag') {
                     _.each(tags, function (tag) {
                         if (tag !== '') {
-                            head.push('<meta property="' + property + '" content="' + tag.trim() + '" />');
+                            tag = hbs.handlebars.Utils.escapeExpression(tag.trim());
+                            head.push('<meta property="' + property + '" content="' + tag + '" />');
                         }
                     });
                     head.push('');
                 } else if (content !== null && content !== undefined) {
-                    if (property.substring(0, 7) === 'twitter') {
-                        head.push('<meta name="' + property + '" content="' + content + '" />');
-                    } else {
-                        head.push('<meta property="' + property + '" content="' + content + '" />');
-                    }
+                    type = property.substring(0, 7) === 'twitter' ? 'name' : 'property';
+                    head.push('<meta ' + type + '="' + property + '" content="' + content + '" />');
                 }
             });
             head.push('');
@@ -150,7 +162,11 @@ ghost_head = function (options) {
 
         head.push('<meta name="generator" content="Ghost ' + trimmedVersion + '" />');
         head.push('<link rel="alternate" type="application/rss+xml" title="' +
-            _.escape(blog.title)  + '" href="' + config.urlFor('rss') + '" />');
+            title  + '" href="' + config.urlFor('rss', null, true) + '" />');
+    }).then(function () {
+        return api.settings.read({key: 'ghost_head'});
+    }).then(function (response) {
+        head.push(response.settings[0].value);
         return filters.doFilter('ghost_head', head);
     }).then(function (head) {
         var headString = _.reduce(head, function (memo, item) { return memo + '\n    ' + item; }, '');

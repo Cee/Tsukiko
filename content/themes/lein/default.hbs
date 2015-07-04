@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    {{! Document Settings }}
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+    {{! Page Meta }}
+    <title>{{meta_title}}</title>
+    <meta name="description" content="{{meta_description}}" />
+
+    <meta name="HandheldFriendly" content="True" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link rel="shortcut icon" href="{{asset "favicon.ico"}}">
+
+    {{! Styles'n'Scripts }}
+    <link rel="stylesheet" type="text/css" href="{{asset "css/lutachu.css"}}" />
+    <link rel="stylesheet" type="text/css" href="{{asset "css/lein.css"}}" />
+
+    <link href='http://fonts.googleapis.com/css?family=Lora|Titillium+Web' rel='stylesheet' type='text/css'>
+
+    {{! Ghost outputs important style and meta data with this tag }}
+    {{ghost_head}}
+</head>
+<body class="{{body_class}} nav-closed">
+    <a href="javascript:;" id="mobile-menu" class="hide"><i class="icon-list"></i></a>
+    <nav id="nav" class="nav fixed">
+      <div class="container">
+        <a href="{{@blog.url}}" class="nav-band" title="{{@blog.title}}">{{@blog.title}}</a>
+        <ul class="nav-group right">
+          <li id="mobile-close" class="hide"><a href="javascript:;">Close</a></li>
+          {{navigation}}
+        </div>
+      </div>
+    </nav>
+
+    <header id="header" {{#if post.image}}class="post-with-cover" style="background-image: url({{post.image}})"{{else if tag.image}} style="background-image: url({{tag.image}})"{{else if author.image}} style="url({{author.cover}})"{{else if post.image}}style="background-image: url({{post.image}})"{{else if @blog.cover}} style="background-image: url({{@blog.cover}})"{{else}}class="no-cover"{{/if}}>
+        <div class="container">
+            <h1 class="header-title">
+                {{#if post.title}}
+                    {{post.title}}
+                {{else if tag.name}}
+                    {{tag.name}}
+                {{else}}
+                    <a href="{{@blog.url}}" title="{{@blog.title}}">{{@blog.title}}</a>
+                {{/if}}
+            </h1>
+            <h2 class="header-description">
+                {{#if post.title}}
+                  <time class="post-date" datetime="{{date format='YYYY-MM-DD'}}">{{date format="MMMM DD, YYYY"}}</time> {{tags prefix=" on "}}
+                {{else if tag.name}}
+                    {{#if tag.description}}
+                        {{tag.description}}
+                    {{else}}
+                        A {{pagination.total}}-post collection
+                    {{/if}}
+                {{else}}
+                    {{@blog.description}}
+                {{/if}}
+            </h2>
+        </div>
+    </header>
+
+    <main id="content" class="container{{#if post.title}} post-with-cover{{/if}}">
+        {{! Everything else gets inserted here }}
+        {{{body}}}
+    </main>
+
+    <footer id="footer" {{#if @blog.cover}} style="background-image: url({{@blog.cover}})"{{else}}class="no-cover"{{/if}}>
+        <section class="container">
+          <p>Copyright &copy; {{date format="YYYY"}} <a href="{{@blog.url}}">{{@blog.title}}</a>.</p>
+          <p>Proudly published with <a href="https://ghost.org">Ghost</a>.</p>
+        </section>
+    </footer>
+
+    {{! Ghost outputs important scripts and data with this tag }}
+    {{ghost_foot}}
+
+    {{! The main JavaScript file for Casper }}
+    <script type="text/javascript" src="{{asset "js/index.js"}}"></script>
+
+</body>
+</html>

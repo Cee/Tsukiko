@@ -1,0 +1,26 @@
+{{! This is the post loop - each post will be output using this markup }}
+{{#foreach posts}}
+<article class="post post-covered{{#unless image}} no-cover{{/unless}}">
+    <section class="post-info">
+        <header>
+            <h1 class="post-title"><a href="{{url}}" title="{{{title}}}">{{{title}}}</a></h1>
+            <p class="post-time"><time class="post-date" datetime="{{date format='YYYY-MM-DD'}}">{{date format="MMMM DD, YYYY"}}</time> {{tags prefix=" on "}}</p>
+        </header>
+        <a href="{{url}}" class="post-introlink" title="{{{title}}}"><section class="post-intro">{{excerpt words="26"}}</section></a>
+        <footer class="post-footer">
+          <p>
+            <span class="post-author">
+                <img src="{{author.image}}"/> {{author}}
+            </span>
+          </p>
+        </footer>
+    </section>
+
+    {{#if image}}
+        <div class="post-cover"><img src="{{image}}" title="{{{title}}}" alt="{{{title}}}"></div>
+    {{/if}}
+</article>
+{{/foreach}}
+
+{{! Previous/next page links - displayed on every page }}
+{{pagination}}
